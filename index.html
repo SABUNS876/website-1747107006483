@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Tic Tac Toe Online</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@600&display=swap');
+  * {
+    box-sizing: border-box;
+  }
+  body {
+    margin: 0; padding: 0;
+    font-family: 'Nunito', sans-serif;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 600px;
+    height: 100vh;
+    justify-content: space-between;
+    padding: 10px 0 30px 0;
+  }
+  h1 {
+    margin: 0 0 10px 0;
+    font-weight: 700;
+    user-select: none;
+  }
+  #mode-select {
+    background: #5a4e84;
+    border: none;
+    border-radius: 10px;
+    padding: 8px 16px;
+    font-size: 1.1rem;
+    color: #eee;
+    cursor: pointer;
+    margin-bottom: 15px;
+    outline: none;
+    user-select: none;
+  }
+  #status {
+    margin: 8px 0 20px 0;
+    font-size: 1.1rem;
+    min-height: 24px;
+    text-align: center;
+    user-select: none;
+    letter-spacing: 0.02em;
+  }
+  #board {
+    width: 330px;
+    height: 330px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+    gap: 10px;
+    user-select: none;
+  }
+  button.cell {
+    background: #8976e0cc;
+    border-radius: 18px;
+    font-size: 5rem;
+    color: #f0ececcc;
+    font-weight: 900;
+    line-height: 0.9;
+    border: none;
+    cursor: pointer;
+    transition: background 0.3s, color 0.3s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+  }
+  button.cell:hover:not(:disabled) {
+    background: #a699f7cc;
+    color: #fff;
+  }
+  button.cell:disabled {
+    cursor: default;
+    color: #ddddddbb;
+    background: #6d5bbb22;
+  }
+  #controls {
+    margin-top: 20px;
+    display: flex;
+    flex-direction: column;
+    width: 330px;
+    gap: 8px;
+  }
+  #room-input {
+    border-radius: 12px;
+    border: none;
+    padding: 8px 12px;
+    font-size: 1rem;
+    outline: none;
+  }
+  #join-btn, #new-room-btn {
+    background: #9876ea;
+    border: none;
+    padding: 10px;
+    font-size: 1rem;
+    font-weight: 700;
+    border-radius: 14px;
+    color: white;
+    cursor: pointer;
+    transition: background 0.3s ease;
+    user-select: none;
+  }
+  #join-btn:hover:not(:disabled), #new-room-btn:hover {
+    background: #b598ff;
+  }
+  #join-btn:disabled {
+    cursor: default;
+    background: #705ca2;
+  }
+  #info {
+    font-size: 0.85rem;
+    color: #ccc;
+    text-align: center;
+    margin-top: 12px;
+    user-select: none;
+  }
+  #link-share {
+    margin-top: 12px;
+    padding: 8px;
+    word-break: break-word;
+    background: #6e5fc7cc;
+    border-radius: 12px;
+    font-size: 0.9rem;
+    user-select: all;
+  }
+
+  @media (max-width: 400px) {
+    #board {
+      width: 90vw;
+      height: 90vw;
+      max-width: 330px;
+      max-height: 330px;
+      gap: 8px;
+    }
+    #controls {
+      width: 90vw;
+      max-width: 330px;
+    }
+    body {
+      padding: 10px 10px 20px 10px;
+    }
+  }
+</style>
+</head>
+<body>
+  <h1>Tic Tac Toe Online</h1>
+  <select id="mode-select" aria-label="Game mode selection">
+    <option value="friend-online">Play with Friend Online</option>
+    <option value="bot-easy">Play with Bot (Easy)</option>
+    <option value="bot-hard">Play with Bot (Hard)</option>
+  </select>
+  
+  <div id="status" aria-live="polite"></div>
+  <div id="board" role="grid" aria-label="Tic Tac Toe Board" tabindex="0">
+    <!-- 9 cells inserted via JS -->
+  </div>
+
+  <div id="controls" hidden>
+    <input type="text" id="room-input" placeholder="Enter room code to join" autocomplete="off" />
+    <button id="join-btn" disabled>Join Room</button>
+    <button id="new-room-btn">Create New Room</button>
+    <div id="link-share" hidden></div>
+  </div>
+
+<script>
+(() => {
+  const boardEl = document.getElementById('board');
+  const statusEl = document.getElementById('status');
+  const modeSelect = document.getElementById('mode-select');
+  const roomInput = document.getElementById('room-input');
+  const joinBtn = document.getElementById('join-btn');
+  const newRoomBtn = document.getElementById('new-room-btn');
+  const controlsDiv = document.getElementById('controls');
+  const linkShareDiv = document.getElementById('link-share');
+
+  // Board state: array of 9, 'X', 'O' or null
+  let boardState = Array(9).fill(null);
+  let currentPlayer = 'X'; // Always 'X' starts
+  let gameActive = false;
+  let vsBot = false;
+  let botLevel = 'easy'; // easy or hard
+  let onlineMode = false;
+  let playerSymbol = 'X';
+  let roomCode = null;
+  let isMyTurn = false;
+
+  // Socket for online mode
+  let socket = null;
+
+  // Create board cells
+  function createBoard() {
+    boardEl.innerHTML = '';
+    for(let i=0; i<9; i++) {
+      const btn = document.createElement('button');
+      btn.classList.add('cell');
+      btn.setAttribute('data-index', i);
+      btn.setAttribute('role', 'gridcell');
+      btn.setAttribute('aria-label', `Cell ${i+1}`);
+      btn.addEventListener('click', onCellClick);
+      boardEl.appendChild(btn);
+    }
+  }
+
+  // Reset the board state and UI
+  function resetBoard() {
+    boardState = Array(9).fill(null);
+    currentPlayer = 'X';
+    gameActive = true;
+    isMyTurn = true;
+    updateBoardUI();
+    updateStatus();
+  }
+
+  // Update board UI from boardState
+  function updateBoardUI() {
+    for(let i=0; i<9; i++) {
+      const btn = boardEl.children[i];
+      btn.textContent = boardState[i] || '';
+      btn.disabled = !gameActive || boardState[i] !== null || (onlineMode && !isMyTurn);
+      btn.style.color = boardState[i] === 'X' ? '#ffe066' : '#ff6b6b';
+    }
+  }
+
+  // Update status text
+  function updateStatus(text) {
+    if(text !== undefined) {
+      statusEl.textContent = text;
+      return;
+    }
+    if(!gameActive) return; // wait for specific message
+    if(onlineMode) {
+      if(!isMyTurn) {
+        statusEl.textContent = `Waiting for opponent's move...`;
+      } else {
+        statusEl.textContent = `Your turn (${playerSymbol})`;
+      }
+    } else if (vsBot) {
+      if(currentPlayer === playerSymbol) {
+        statusEl.textContent = `Your turn (${playerSymbol})`;
+      } else {
+        statusEl.textContent = `Bot's turn (${currentPlayer})`;
+      }
+    } else {
+      statusEl.textContent = `Player ${currentPlayer}'s turn`;
+    }
+  }
+
+  // Check for winner or draw. Return 'X' or 'O' if winner, 'draw' or null
+  function checkWinner(board) {
+    const winPatterns = [
+      [0,1,2],[3,4,5],[6,7,8], // rows
+      [0,3,6],[1,4,7],[2,5,8], // cols
+      [0,4,8],[2,4,6],         // diagonals
+    ];
+    for(const pattern of winPatterns) {
+      const [a,b,c] = pattern;
+      if(board[a] && board[a] === board[b] && board[a] === board[c]) {
+        return board[a];
+      }
+    }
+    if(board.every(cell => cell !== null)) return 'draw';
+    return null;
+  }
+
+  // Make a move at index for currentPlayer. Return true if successful
+  function makeMove(index, player) {
+    if(boardState[index] !== null || !gameActive) return false;
+    boardState[index] = player;
+    return true;
+  }
+
+  // Minimax for hard bot
+  function minimax(board, player, depth=0) {
+    const winner = checkWinner(board);
+    if(winner === playerSymbol) return {score: -10 + depth};
+    if(winner && winner !== 'draw') return {score: 10 - depth};
+    if(winner === 'draw') return {score: 0};
+
+    const moves = [];
+    for(let i=0; i<9; i++) {
+      if(board[i] === null) {
+        const newBoard = board.slice();
+        newBoard[i] = player;
+        const nextPlayer = player === 'X' ? 'O' : 'X';
+        const result = minimax(newBoard, nextPlayer, depth+1);
+        moves.push({
+          index: i,
+          score: (player === playerSymbol) ? result.score : -result.score
+        });
+      }
+    }
+    if(player === playerSymbol) {
+      let minMove = moves.reduce((min, m) => m.score < min.score ? m : min, moves[0]);
+      return minMove;
+    } else {
+      let maxMove = moves.reduce((max, m) => m.score > max.score ? m : max, moves[0]);
+      return maxMove;
+    }
+  }
+
+  // Bot makes a move
+  function botMove() {
+    if(!gameActive || currentPlayer !== (playerSymbol === 'X' ? 'O' : 'X')) return;
+    let move;
+    if(botLevel === 'easy') {
+      // Random available
+      const avail = boardState.map((v,i) => v === null ? i : null).filter(v => v !== null);
+      move = avail[Math.floor(Math.random()*avail.length)];
+    } else {
+      // Hard AI uses minimax
+      move = minimax(boardState, currentPlayer).index;
+    }
+    if(move != null) {
+      makeMove(move, currentPlayer);
+      currentPlayer = currentPlayer === 'X' ? 'O' : 'X';
+      updateBoardUI();
+      checkGameOver();
+      updateStatus();
+    }
+  }
+
+  // Check game over, announce winner or draw and disable board
+  function checkGameOver() {
+    const winner = checkWinner(boardState);
+    if(winner) {
+      gameActive = false;
+      if(winner === 'draw') {
+        updateStatus('Game over: Draw!');
+      } else {
+        updateStatus(`Game over: Player ${winner} wins!`);
+      }
+      // Disable buttons
+      updateBoardUI();
+      return true;
+    }
+    return false;
+  }
+
+  // Handle cell click event
+  function onCellClick(e) {
+    const index = +e.target.getAttribute('data-index');
+    if(onlineMode) {
+      // Only allow move if player's turn
+      if(!gameActive || !isMyTurn) return;
+      if(boardState[index] !== null) return;
+      // Send move to server
+      sendMove(index);
+    } else if(vsBot) {
+      if(!gameActive || currentPlayer !== playerSymbol) return;
+      if(makeMove(index, currentPlayer)){
+        currentPlayer = currentPlayer === 'X' ? 'O' : 'X';
+        updateBoardUI();
+        if(!checkGameOver()) {
+          updateStatus();
+          setTimeout(botMove, 400);
+        }
+      }
+    } else {
+      if(!gameActive) return;
+      if(makeMove(index, currentPlayer)){
+        currentPlayer = currentPlayer === 'X' ? 'O' : 'X';
+        updateBoardUI();
+        checkGameOver();
+        updateStatus();
+      }
+    }
+  }
+
+  // Generate random Room Code
+  function generateRoomCode() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let code = '';
+    for(let i=0; i<6; i++) {
+      code += chars.charAt(Math.floor(Math.random()*chars.length));
+    }
+    return code;
+  }
+
+  // --- WebSocket and Online Code ---
+
+  // The signaling server is a simple WebSocket echo server on Heroku demo or fallback to public server. 
+  // We simulate two peers joining the same room and exchanging board states.
+  // This is not a production server, just a demonstration without user accounts or security.
+
+  const WS_SERVER_URL = 'wss://tictactoe-basic-server.fly.dev';
+
+  function setupSocket(room) {
+    socket = new WebSocket(WS_SERVER_URL);
+
+    socket.addEventListener('open', e => {
+      sendToServer({ type: 'join', room });
+    });
+
+    socket.addEventListener('message', e => {
+      let data = null;
+      try {
+        data = JSON.parse(e.data);
+      } catch {}
+      if(!data) return;
+
+      switch(data.type) {
+        case 'join-ack':
+          isMyTurn = data.first;
+          playerSymbol = isMyTurn ? 'X' : 'O';
+          updateStatus();
+          break;
+        case 'opponent-move':
+          if(data.index !== undefined) {
+            boardState[data.index] = (playerSymbol === 'X' ? 'O' : 'X');
+            currentPlayer = playerSymbol;
+            isMyTurn = true;
+            updateBoardUI();
+            if(checkGameOver()) {
+              sendToServer({type:'game-over'});
+              disableOnline();
+            } else {
+              updateStatus();
+            }
+          }
+          break;
+        case 'game-over':
+          gameActive = false;
+          updateStatus('Game over: Opponent left or game ended!');
+          disableOnline();
+          break;
+        case 'error':
+          alert('Server error: ' + (data.message || 'unknown'));
+          break;
+        default:
+          break;
+      }
+    });
+
+    socket.addEventListener('close', e => {
+      updateStatus('Disconnected from server');
+      socket = null;
+      disableOnline();
+    });
+
+    socket.addEventListener('error', e => {
+      updateStatus('Connection error');
+      socket = null;
+      disableOnline();
+    });
+  }
+
+  function sendToServer(msg) {
+    if(socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify(msg));
+    }
+  }
+
+  function sendMove(index) {
+    if(!gameActive || !isMyTurn) return;
+    boardState[index] = playerSymbol;
+    isMyTurn = false;
+    currentPlayer = playerSymbol === 'X' ? 'O' : 'X';
+    updateBoardUI();
+    updateStatus();
+    sendToServer({ type: 'move', index });
+
+    if(checkGameOver()) {
+      sendToServer({ type:'game-over' });
+      disableOnline();
+    }
+  }
+
+  function disableOnline() {
+    for(let i=0; i<9; i++) {
+      boardEl.children[i].disabled = true;
+    }
+    joinBtn.disabled = true;
+    roomInput.disabled = true;
+    newRoomBtn.disabled = false;
+  }
+
+  // Join room from input
+  function joinRoom() {
+    const code = roomInput.value.trim().toUpperCase();
+    if(!code) return;
+    roomCode = code;
+    onlineMode = true;
+    vsBot = false;
+    controlsDiv.hidden = true;
+    resetBoard();
+    createBoard();
+    setupSocket(roomCode);
+    updateStatus('Connecting to room ' + roomCode + ' ...');
+    joinBtn.disabled = true;
+    roomInput.disabled = true;
+    newRoomBtn.disabled = true;
+  }
+
+  // Create new room and generate shareable link
+  function createNewRoom() {
+    roomCode = generateRoomCode();
+    onlineMode = true;
+    vsBot = false;
+    controlsDiv.hidden = true;
+    linkShareDiv.hidden = false;
+    resetBoard();
+    createBoard();
+    setupSocket(roomCode);
+    updateStatus('Created room ' + roomCode + '. Share link below:');
+    const url = `${window.location.origin}${window.location.pathname}?room=${roomCode}`;
+    linkShareDiv.textContent = url;
+    joinBtn.disabled = true;
+    roomInput.disabled = true;
+    newRoomBtn.disabled = true;
+  }
+
+  // Parse URL param to join room automatically
+  function parseURLRoom() {
+    const params = new URLSearchParams(window.location.search);
+    const room = params.get('room');
+    if(room) {
+      roomInput.value = room.toUpperCase();
+      joinBtn.disabled = false;
+      joinRoom();
+      controlsDiv.hidden = true;
+    }
+  }
+
+  // Enable or disable join button based on input value
+  roomInput.addEventListener('input', () => {
+    joinBtn.disabled = roomInput.value.trim().length === 0;
+  });
+
+  joinBtn.addEventListener('click', () => {
+    joinRoom();
+    controlsDiv.hidden = true;
+  });
+
+  newRoomBtn.addEventListener('click', () => {
+    createNewRoom();
+  });
+
+  modeSelect.addEventListener('change', () => {
+    roomInput.value = '';
+    joinBtn.disabled = true;
+    linkShareDiv.hidden = true;
+    socket?.close();
+    socket = null;
+    onlineMode = false;
+    vsBot = false;
+    controlsDiv.hidden = true;
+    resetBoard();
+    createBoard();
+
+    if(modeSelect.value === 'friend-online') {
+      controlsDiv.hidden = false;
+      statusEl.textContent = 'Enter room code to join or create a new room.';
+    } else {
+      vsBot = true;
+      botLevel = modeSelect.value === 'bot-hard' ? 'hard' : 'easy';
+      playerSymbol = 'X';
+      currentPlayer = 'X';
+      gameActive = true;
+      isMyTurn = true;
+      updateStatus();
+      updateBoardUI();
+    }
+  });
+
+  // On initial load
+  createBoard();
+  resetBoard();
+  statusEl.textContent = 'Select mode above to play';
+
+  // Join room if URL has room param
+  parseURLRoom();
+
+  // Accessibility keyboard on grid
+  boardEl.addEventListener('keydown', (e) => {
+    if(!gameActive) return;
+    const key = e.key;
+    const active = document.activeElement;
+    if(!active.classList.contains('cell')) return;
+    let i = +active.getAttribute('data-index');
+    if(['ArrowRight','ArrowLeft','ArrowUp','ArrowDown'].includes(key)) {
+      e.preventDefault();
+      let row = Math.floor(i / 3);
+      let col = i % 3;
+      switch(key) {
+        case 'ArrowRight': col = (col + 1) % 3; break;
+        case 'ArrowLeft': col = (col + 2) % 3; break;
+        case 'ArrowUp': row = (row + 2) % 3; break;
+        case 'ArrowDown': row = (row + 1) % 3; break;
+      }
+      const nIndex = row * 3 + col;
+      boardEl.children[nIndex].focus();
+    } else if(key === 'Enter' || key === ' ') {
+      e.preventDefault();
+      active.click();
+    }
+  });
+})();
+</script>
+</body>
+</html>
+
+```
